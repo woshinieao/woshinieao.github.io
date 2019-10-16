@@ -1,7 +1,8 @@
 ---
-title: Welcome
+title: NEO的博客站
 ---
 
+这是neo的博客站，用以记录工作和学习中的笔记，以便于日后复习。
 This is the **Edition** template from [CloudCannon](http://cloudcannon.com/).
 **Edition** is perfect for documenting your product, application or service.
 It's populated with example content to give you some ideas.
