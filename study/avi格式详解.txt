@@ -1,0 +1,133 @@
+AVI文件解析工具下载地址：httpdownload.csdn.netdetailzjq6343595317556659
+
+    AVI（Audio Video Interleaved的缩写）是一种RIFF（Resource Interchange File Format的缩写）文件格式，多用于音视频捕捉、编辑、回放等应用程序中。通常情况下，一个AVI文件可以包含多个不同类型的媒体流（典型的情况下有一个音频流和一个视频流），不过含有单一音频流或单一视频流的AVI文件也是合法的。AVI可以算是Windows操作系统上最基本的、也是最常用的一种媒体文件格式。
+
+    先来介绍RIFF文件格式。RIFF文件使用四字符码FOURCC（four-character code）来表征数据类型，比如‘RIFF’、‘AVI ’、‘LIST’等。注意，Windows操作系统使用的字节顺序是little-endian，因此一个四字符码‘abcd’实际的DWORD值应为0x64636261。另外，四字符码中像‘AVI ’一样含有空格也是合法的。
+
+RIFF文件首先含有一个如图3.31的文件头结构。
+
+                                
+
+                                               图3.31 RIFF文件结构
+											   
+
+
+                											   
+			____________________________________________________________
+			|	|	|	|	|		   |		  |						|
+			| R | I	| F	| F	|文件大小  |文件类型  |  数据...			|
+			|___|___|___|___|__________|__________|_____________________|
+			|   四字节      | 四字节   | 四字节   | 
+   最开始的4个字节是一个四字符码‘RIFF’，表示这是一个RIFF文件；紧跟着后面用4个字节表示此RIFF文件的大小；然后又是一个四字符码说明文件的具体类型（比如AVI、WAVE等）；最后就是实际的数据。注意文件大小值的计算方法为：实际数据长度  + 4（文件类型域的大小）；也就是说，文件大小的值不包括‘RIFF’域和“文件大小”域本身的大小。
+
+    RIFF文件的实际数据中，通常还使用了列表（List）和块（Chunk）的形式来组织。列表可以嵌套子列表和块。其中，列表的结构为：‘LIST’ listSize listType listData ——‘LIST’是一个四字符码，表示这是一个列表；listSize占用4字节，记录了整个列表的大小；listType也是一个四字符码，表示本列表的具体类型；listData就是实际的列表数据。注意listSize值的计算方法为：实际的列表数据长度 + 4（listType域的大小）；也就是说listSize值不包括‘LIST’域和listSize域本身的大小。再来看块的结构：ckID ckSize ckData ——ckID是一个表示块类型的四字符码；ckSize占用4字节，记录了整个块的大小；ckData为实际的块数据。注意ckSize值指的是实际的块数据长度，而不包括ckID域和ckSize域本身的大小。（注意：在下面的内容中，将以LIST ( listType ( listData ) )的形式来表示一个列表，以ckID ( ckData )的形式来表示一个块，如[ optional element ]中括号中的元素表示为可选项。）
+
+     接下来介绍AVI文件格式。AVI文件类型用一个四字符码‘AVI ’来表示。整个AVI文件的结构为：一个RIFF头 + 两个列表（一个用于描述媒体流格式、一个用于保存媒体流数据） + 一个可选的索引块。AVI文件的展开结构大致如下：
+
+RIFF (‘AVI ’
+      LIST (‘hdrl’
+            ‘avih’(主AVI信息头数据)
+            LIST (‘strl’
+                  ‘strh’ (流的头信息数据)
+                  ‘strf’ (流的格式信息数据)
+                  [‘strd’ (可选的额外的头信息数据) ]
+                  [‘strn’ (可选的流的名字) ]
+                  ...
+                 )
+             ...
+           )
+      LIST (‘movi’
+            { SubChunk  LIST (‘rec ’
+                              SubChunk1
+                              SubChunk2
+                              ...
+                             )
+               ...
+            }
+            ...
+           )
+      [‘idx1’ (可选的AVI索引块数据) ]
+     )
+
+    首先，RIFF (‘AVI ’…)表征了AVI文件类型。然后就是AVI文件必需的第一个列表——‘hdrl’列表，用于描述AVI文件中各个流的格式信息（AVI文件中的每一路媒体数据都称为一个流）。‘hdrl’列表嵌套了一系列块和子列表——首先是一个‘avih’块，用于记录AVI文件的全局信息，比如流的数量、视频图像的宽和高等，可以使用一个AVIMAINHEADER数据结构来操作：
+
+typedef struct _avimainheader {
+    FOURCC fcc;    必须为‘avih’
+    DWORD  cb;     本数据结构的大小，不包括最初的8个字节（fcc和cb两个域）
+    DWORD  dwMicroSecPerFrame;    视频帧间隔时间（以毫秒为单位）
+    DWORD  dwMaxBytesPerSec;      这个AVI文件的最大数据率
+    DWORD  dwPaddingGranularity;  数据填充的粒度
+    DWORD  dwFlags;          AVI文件的全局标记，比如是否含有索引块等
+    DWORD  dwTotalFrames;    总帧数
+    DWORD  dwInitialFrames;  为交互格式指定初始帧数（非交互格式应该指定为0）
+    DWORD  dwStreams;        本文件包含的流的个数
+    DWORD  dwSuggestedBufferSize;  建议读取本文件的缓存大小（应能容纳最大的块）
+    DWORD  dwWidth;          视频图像的宽（以像素为单位）
+    DWORD  dwHeight;         视频图像的高（以像素为单位）
+    DWORD  dwReserved[4];    保留
+} AVIMAINHEADER;
+
+   然后，就是一个或多个‘strl’子列表。（文件中有多少个流，这里就对应有多少个‘strl’子列表。）每个‘strl’子列表至少包含一个‘strh’块和一个‘strf’块，而‘strd’块（保存编解码器需要的一些配置信息）和‘strn’块（保存流的名字）是可选的。首先是‘strh’块，用于说明这个流的头信息，可以使用一个AVISTREAMHEADER数据结构来操作：
+
+typedef struct _avistreamheader {
+     FOURCC fcc;   必须为‘strh’
+     DWORD  cb;    本数据结构的大小，不包括最初的8个字节（fcc和cb两个域）
+FOURCC fccType;     流的类型：‘auds’（音频流）、‘vids’（视频流）、
+                   ‘mids’（MIDI流）、‘txts’（文字流）
+     FOURCC fccHandler;  指定流的处理者，对于音视频来说就是解码器
+     DWORD  dwFlags;     标记：是否允许这个流输出？调色板是否变化？
+     WORD   wPriority;   流的优先级（当有多个相同类型的流时优先级最高的为默认流）
+     WORD   wLanguage;
+     DWORD  dwInitialFrames;  为交互格式指定初始帧数
+     DWORD  dwScale;    这个流使用的时间尺度
+     DWORD  dwRate;
+     DWORD  dwStart;    流的开始时间
+     DWORD  dwLength;   流的长度（单位与dwScale和dwRate的定义有关）
+     DWORD  dwSuggestedBufferSize;  读取这个流数据建议使用的缓存大小
+     DWORD  dwQuality;     流数据的质量指标（0 ~ 10,000）
+     DWORD  dwSampleSize;  Sample的大小
+     struct {
+         short int left;
+         short int top;
+         short int right;
+         short int bottom;
+}  rcFrame;   指定这个流（视频流或文字流）在视频主窗口中的显示位置
+              视频主窗口由AVIMAINHEADER结构中的dwWidth和dwHeight决定
+} AVISTREAMHEADER;
+
+ 
+
+然后是‘strf’块，用于说明流的具体格式。如果是视频流，则使用一个BITMAPINFO数据结构来描述；如果是音频流，则使用一个WAVEFORMATEX数据结构来描述。
+
+ 
+
+当AVI文件中的所有流都使用一个‘strl’子列表说明了以后（注意：‘strl’子列表出现的顺序与媒体流的编号是对应的，比如第一个‘strl’子列表说明的是第一个流（Stream 0），第二个‘strl’子列表说明的是第二个流（Stream 1），以此类推），‘hdrl’列表的任务也就完成了，随后跟着的就是AVI文件必需的第二个列表——‘movi’列表，用于保存真正的媒体流数据（视频图像帧数据或音频采样数据等）。那么，怎么来组织这些数据呢？可以将数据块直接嵌在‘movi’列表里面，也可以将几个数据块分组成一个‘rec  ’列表后再编排进‘movi’列表。（注意：在读取AVI文件内容时，建议将一个‘rec ’列表中的所有数据块一次性读出。）但是，当AVI文件中包含有多个流的时候，数据块与数据块之间如何来区别呢？于是数据块使用了一个四字符码来表征它的类型，这个四字符码由2个字节的类型码和2个字节的流编号组成。标准的类型码定义如下：‘db’（非压缩视频帧）、‘dc’（压缩视频帧）、‘pc’（改用新的调色板）、‘wb’（音缩视频）。比如第一个流（Stream 0）是音频，则表征音频数据块的四字符码为‘00wb’；第二个流（Stream 1）是视频，则表征视频数据块的四字符码为‘00db’或‘00dc’。对于视频数据来说，在AVI数据序列中间还可以定义一个新的调色板，每个改变的调色板数据块用‘xxpc’来表征，新的调色板使用一个数据结构AVIPALCHANGE来定义。（注意：如果一个流的调色办中途可能改变，则应在这个流格式的描述中，也就是AVISTREAMHEADER结构的dwFlags中包含一个AVISF_VIDEO_PALCHANGES标记。）另外，文字流数据块可以使用随意的类型码表征。
+
+ 
+
+最后，紧跟在‘hdrl’列表和‘movi’列表之后的，就是AVI文件可选的索引块。这个索引块为AVI文件中每一个媒体数据块进行索引，并且记录它们在文件中的偏移（可能相对于‘movi’列表，也可能相对于AVI文件开头）。索引块使用一个四字符码‘idx1’来表征，索引信息使用一个数据结构来AVIOLDINDEX定义。
+
+typedef struct _avioldindex {
+   FOURCC  fcc;   必须为‘idx1’
+   DWORD   cb;    本数据结构的大小，不包括最初的8个字节（fcc和cb两个域）
+   struct _avioldindex_entry {
+      DWORD   dwChunkId;    表征本数据块的四字符码
+      DWORD   dwFlags;      说明本数据块是不是关键帧、是不是‘rec ’列表等信息
+      DWORD   dwOffset;     本数据块在文件中的偏移量
+      DWORD   dwSize;       本数据块的大小
+  } aIndex[];  这是一个数组！为每个媒体数据块都定义一个索引信息
+} AVIOLDINDEX;
+
+ 
+
+注意：如果一个AVI文件包含有索引块，则应在主AVI信息头的描述中，也就是AVIMAINHEADER结构的dwFlags中包含一个AVIF_HASINDEX标记。
+
+ 
+
+还有一种特殊的数据块，用一个四字符码‘JUNK’来表征，它用于内部数据的队齐（填充），应用程序应该忽略这些数据块的实际意义。  
+
+ 
+
+提示：上述关于AVI文件格式的介绍，并不包括OpenDML AVI M-JPEG文件格式小组制定的OpenDML AVI文件格式扩展部分的内容。想对该扩展部分有更多了解的读者，请另行参考“OpenDML AVI File Format Extensions”一文（此文可在Internet上搜索获得）。
+
+ 
